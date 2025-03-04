@@ -1,0 +1,153 @@
+<Window x:Class="WpfBrowser.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="WPF Browser" 
+        Height="800" Width="1200"
+        Icon="/Resources/app.ico"
+        KeyboardNavigation.TabNavigation="Cycle">
+    <DockPanel>
+        <ToolBar DockPanel.Dock="Top">
+            <Button x:Name="btnBack" Click="btnBack_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE72B;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="뒤로 가기"/>
+            
+            <Button x:Name="btnForward" Click="btnForward_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE72A;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="앞으로 가기"/>
+            
+            <Button x:Name="btnHome" Click="btnHome_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE80F;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="홈페이지로 이동"/>
+            
+            <Button x:Name="btnRefresh" Click="btnRefresh_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE72C;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="새로고침"/>
+            
+            <Separator />
+            
+            <TextBox x:Name="txtUrl" Width="800" KeyDown="txtUrl_KeyDown" 
+                     ToolTipService.InitialShowDelay="200"
+                     ToolTipService.ShowDuration="3000"
+                     ToolTip="웹 주소를 입력하세요"/>
+            
+            <Button x:Name="btnGo" Click="btnGo_Click" 
+                    Content="이동" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="입력한 주소로 이동"/>
+            
+            <Separator />
+            
+            <Button x:Name="btnBookmark" Click="btnBookmark_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE734;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="현재 페이지를 즐겨찾기에 추가"/>
+            
+            <Button x:Name="btnSetHomepage" Click="SetAsHomepage_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE80F;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="현재 페이지를 홈페이지로 설정"/>
+
+            <Separator />
+            
+            <Button x:Name="btnAbout" Click="btnAbout_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE946;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="프로그램 정보 (F1)"/>
+
+            <Separator />
+            
+            <Button x:Name="btnToggleBookmarks" Click="btnToggleBookmarks_Click"
+                    FontFamily="Segoe MDL2 Assets" Content="&#xE8A4;"
+                    FontSize="16" Padding="5,0"
+                    ToolTipService.InitialShowDelay="200"
+                    ToolTipService.ShowDuration="3000"
+                    ToolTip="북마크 창 표시/숨기기 (Ctrl+B)"/>
+        </ToolBar>
+        
+        <StatusBar DockPanel.Dock="Bottom" Height="25">
+            <StatusBarItem>
+                <TextBlock x:Name="txtStatus"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="bookmarksColumn" Width="200"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListBox x:Name="lstBookmarks" Grid.Column="0" 
+                     MouseDoubleClick="lstBookmarks_MouseDoubleClick"
+                     MouseRightButtonUp="lstBookmarks_MouseRightButtonUp"
+                     AllowDrop="True"
+                     PreviewMouseLeftButtonDown="lstBookmarks_PreviewMouseLeftButtonDown"
+                     Drop="lstBookmarks_Drop"
+                     DragEnter="lstBookmarks_DragEnter">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="AllowDrop" Value="True"/>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+            
+            <TabControl x:Name="browserTabs" Grid.Column="1" 
+                        MouseDoubleClick="browserTabs_MouseDoubleClick">
+                <TabControl.ItemContainerStyle>
+                    <Style TargetType="TabItem">
+                        <EventSetter Event="MouseDoubleClick" Handler="TabTitle_MouseDoubleClick"/>
+                    </Style>
+                </TabControl.ItemContainerStyle>
+                <TabControl.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel>
+                            <TextBlock Text="{Binding Title}" 
+                                     MaxWidth="200" 
+                                     TextTrimming="CharacterEllipsis"/>
+                            <Button Content="×" Click="CloseTab_Click" 
+                                    DockPanel.Dock="Right" Margin="5,0,0,0"
+                                    Background="Transparent" BorderThickness="0"/>
+                        </DockPanel>
+                    </DataTemplate>
+                </TabControl.ItemTemplate>
+                <TabControl.ContentTemplate>
+                    <DataTemplate>
+                        <wv2:WebView2 Source="{Binding Url}" 
+                                     NavigationCompleted="WebView_NavigationCompleted"
+                                     NavigationStarting="WebView_NavigationStarting"/>
+                    </DataTemplate>
+                </TabControl.ContentTemplate>
+            </TabControl>
+            
+            <Button Grid.Column="1" 
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Content="+" Click="AddTab_Click" 
+                    FontSize="16" Padding="5,0">
+                <Button.ToolTip>
+                    <ToolTip Content="새 탭" 
+                             ToolTipService.InitialShowDelay="200" 
+                             ToolTipService.ShowDuration="3000"/>
+                </Button.ToolTip>
+            </Button>
+        </Grid>
+    </DockPanel>
+</Window> 
