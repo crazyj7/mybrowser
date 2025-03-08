@@ -12,6 +12,7 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Windows.Media;
+using System.Windows.Data;
 
 namespace WpfBrowser
 {
@@ -87,29 +88,21 @@ namespace WpfBrowser
             txtStatus.Text = "페이지 로딩 중...";
         }
 
-        private void WebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        private void WebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (sender is WebView2 webView)
+            if (sender is WebView2 webView && webView.DataContext is BrowserTab tab)
             {
-                var tab = webView.DataContext as BrowserTab;
-                if (tab != null && tab == browserTabs.SelectedItem)  // 현재 선택된 탭인 경우에만 URL 업데이트
+                if (tab == browserTabs.SelectedItem)  // 현재 선택된 탭인 경우에만 URL 텍스트박스 업데이트
                 {
-                    tab.Title = webView.CoreWebView2.DocumentTitle;
-                    tab.Url = webView.CoreWebView2.Source;
                     txtUrl.Text = tab.Url;
                     txtStatus.Text = "로딩 완료";
-                }
-                else if (tab != null)  // 선택되지 않은 탭은 URL만 업데이트
-                {
-                    tab.Title = webView.CoreWebView2.DocumentTitle;
-                    tab.Url = webView.CoreWebView2.Source;
                 }
             }
         }
 
         public void AddNewTab(string? url = null, bool isEmptyTab = false, string? title = null)
         {
-            var tab = new BrowserTab
+            var tab = new BrowserTab(this)
             {
                 Title = title ?? "새 탭",
                 Url = isEmptyTab ? "about:blank" : (url ?? homeUrl)
@@ -205,7 +198,29 @@ namespace WpfBrowser
 
         private void btnRefresh_Click(object sender, RoutedEventArgs e)
         {
-            CurrentWebView?.Reload();
+            try
+            {
+                var webView = CurrentWebView;
+                if (webView != null && webView.CoreWebView2 != null)
+                {
+                    webView.CoreWebView2.Reload();
+                }
+                else if (browserTabs.SelectedItem is BrowserTab currentTab)
+                {
+                    // CoreWebView2가 아직 초기화되지 않은 경우, URL을 다시 설정하여 페이지 다시 로드
+                    string currentUrl = currentTab.Url;
+                    if (!string.IsNullOrEmpty(currentUrl))
+                    {
+                        currentTab.Url = currentUrl;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 오류 발생 시 상태바에 메시지 표시
+                txtStatus.Text = $"새로고침 중 오류: {ex.Message}";
+                System.Diagnostics.Debug.WriteLine($"Refresh error: {ex}");
+            }
         }
 
         private void btnGo_Click(object sender, RoutedEventArgs e)
@@ -218,6 +233,15 @@ namespace WpfBrowser
             if (e.Key == Key.Enter)
             {
                 NavigateToUrl(txtUrl.Text);
+            }
+        }
+
+        private void txtUrl_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is TextBox textBox)
+            {
+                textBox.SelectAll();
+                e.Handled = true;
             }
         }
 
@@ -306,14 +330,13 @@ namespace WpfBrowser
             if (item != null)
             {
                 ContextMenu contextMenu = new ContextMenu();
-                
-                // 새 탭에서 열기 메뉴 아이템
-                MenuItem openNewTab = new MenuItem();
-                openNewTab.Header = "새 탭에서 열기";
-                openNewTab.Click += (s, args) => OpenInNewTab(lstBookmarks.SelectedIndex);
-                contextMenu.Items.Add(openNewTab);
-                
-                contextMenu.Items.Add(new Separator());
+             
+
+                // 편집 메뉴 아이템
+                MenuItem editItem = new MenuItem();
+                editItem.Header = "편집";
+                editItem.Click += (s, args) => EditBookmark(lstBookmarks.SelectedIndex);
+                contextMenu.Items.Add(editItem);
                 
                 MenuItem deleteItem = new MenuItem();
                 deleteItem.Header = "삭제";
@@ -346,9 +369,10 @@ namespace WpfBrowser
         private void lstBookmarks_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             int selectedIndex = lstBookmarks.SelectedIndex;
-            if (selectedIndex >= 0 && browserTabs.SelectedItem is BrowserTab currentTab)
+            if (selectedIndex >= 0)
             {
-                currentTab.Url = bookmarks[selectedIndex].Url;
+                var bookmark = bookmarks[selectedIndex];
+                AddNewTab(bookmark.Url, false, bookmark.Title);
             }
         }
 
@@ -521,16 +545,6 @@ namespace WpfBrowser
             }
         }
 
-        // 탭 제목 더블클릭 이벤트 처리
-        private void TabTitle_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        {
-            if (browserTabs.SelectedItem is BrowserTab tab)
-            {
-                CloseTab(tab);
-                e.Handled = true;
-            }
-        }
-
         private void btnToggleBookmarks_Click(object sender, RoutedEventArgs e)
         {
             ToggleBookmarksPanel();
@@ -631,6 +645,39 @@ namespace WpfBrowser
             while (current != null);
             return null;
         }
+
+        private void EditBookmark(int index)
+        {
+            if (index >= 0 && index < bookmarks.Count)
+            {
+                var bookmark = bookmarks[index];
+                var dialog = new InputDialog("북마크 편집", bookmark.Title, bookmark.Url);
+                if (dialog.ShowDialog() == true)
+                {
+                    bookmark.Title = dialog.TitleText;
+                    bookmark.Url = dialog.UrlText;
+                    UpdateBookmarksList();
+                    SaveBookmarks();
+                }
+            }
+        }
+
+        public void OnWebViewNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            txtStatus.Text = "페이지 로딩 중...";
+        }
+
+        public void OnWebViewNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (sender is WebView2 webView && webView.DataContext is BrowserTab tab)
+            {
+                if (tab == browserTabs.SelectedItem)  // 현재 선택된 탭인 경우에만 URL 텍스트박스 업데이트
+                {
+                    txtUrl.Text = tab.Url;
+                    txtStatus.Text = "로딩 완료";
+                }
+            }
+        }
     }
 
     public class Bookmark
@@ -666,13 +713,28 @@ namespace WpfBrowser
         private bool isInitialized = false;
         private string pendingUrl = "";
         private bool disposed = false;
+        private MainWindow mainWindow;
 
-        public BrowserTab()
+        public BrowserTab(MainWindow window)
         {
+            mainWindow = window;
             webView = new WebView2();
+            
+            // 이벤트 핸들러 연결
             webView.NavigationCompleted += WebView_NavigationCompleted;
             webView.NavigationStarting += WebView_NavigationStarting;
             webView.CoreWebView2InitializationCompleted += WebView_CoreWebView2InitializationCompleted;
+            
+            // DataContext를 자기 자신으로 설정하여 바인딩 활성화
+            webView.DataContext = this;
+            
+            // Source 프로퍼티 바인딩을 코드에서 설정
+            var binding = new System.Windows.Data.Binding("Url")
+            {
+                Source = this,
+                Mode = System.Windows.Data.BindingMode.TwoWay
+            };
+            webView.SetBinding(WebView2.SourceProperty, binding);
         }
 
         private void WebView_CoreWebView2InitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
@@ -680,7 +742,6 @@ namespace WpfBrowser
             if (e.IsSuccess)
             {
                 isInitialized = true;
-                // 초기화 직후 명시적으로 URL 설정
                 if (!string.IsNullOrEmpty(url))
                 {
                     webView.CoreWebView2.Navigate(url);
@@ -696,16 +757,77 @@ namespace WpfBrowser
         private void WebView_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
         {
             NavigationStarting?.Invoke(this, e);
+            Title = "로딩 중...";
+            mainWindow.OnWebViewNavigationStarting(sender, e);
         }
 
         private void WebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             if (webView.CoreWebView2 != null)
             {
-                Title = webView.CoreWebView2.DocumentTitle;
-                url = webView.CoreWebView2.Source;  // url 필드를 직접 업데이트
-                OnPropertyChanged(nameof(Url));
+                var newTitle = webView.CoreWebView2.DocumentTitle;
+                var newUrl = webView.CoreWebView2.Source;
+                
+                // 로그 추가 (디버깅용)
+                System.Diagnostics.Debug.WriteLine($"Navigation completed: URL={newUrl}, Title={newTitle}, Success={e.IsSuccess}");
+                
+                // 탐색 성공 시에만 타이틀 업데이트
+                if (e.IsSuccess)
+                {
+                    // URL이 about:blank가 아닐 때만 타이틀 업데이트
+                    if (!string.IsNullOrEmpty(newTitle) && newUrl != "about:blank")
+                    {
+                        Title = newTitle;
+                        System.Diagnostics.Debug.WriteLine($"Title updated to: {newTitle}");
+                    }
+                    else if (newUrl == "about:blank")
+                    {
+                        Title = "새 탭";
+                        System.Diagnostics.Debug.WriteLine("Set title to '새 탭' for about:blank");
+                    }
+                    else if (string.IsNullOrEmpty(newTitle))
+                    {
+                        // URL을 기반으로 임시 타이틀 설정
+                        if (!string.IsNullOrEmpty(newUrl))
+                        {
+                            try
+                            {
+                                var uri = new Uri(newUrl);
+                                Title = uri.Host;
+                                System.Diagnostics.Debug.WriteLine($"Title set to host: {uri.Host}");
+                            }
+                            catch
+                            {
+                                Title = newUrl;
+                                System.Diagnostics.Debug.WriteLine($"Title set to URL: {newUrl}");
+                            }
+                        }
+                    }
+                    
+                    // URL 업데이트
+                    if (url != newUrl)
+                    {
+                        url = newUrl;
+                        OnPropertyChanged(nameof(Url));
+                    }
+                }
+                else
+                {
+                    // 탐색 실패 시
+                    System.Diagnostics.Debug.WriteLine($"Navigation failed to {newUrl}");
+                    if (Title == "로딩 중...")
+                    {
+                        Title = "페이지를 찾을 수 없음";
+                    }
+                }
+                
+                // 이벤트 발생
                 NavigationCompleted?.Invoke(this, e);
+                
+                // UI 스레드에서 메인 윈도우 메서드 호출
+                Application.Current.Dispatcher.BeginInvoke(new Action(() => {
+                    mainWindow.OnWebViewNavigationCompleted(sender, e);
+                }));
             }
         }
 
@@ -714,8 +836,11 @@ namespace WpfBrowser
             get => title;
             set
             {
-                title = value ?? "";
-                OnPropertyChanged(nameof(Title));
+                if (title != value)
+                {
+                    title = value ?? "";
+                    OnPropertyChanged(nameof(Title));
+                }
             }
         }
 
@@ -724,18 +849,18 @@ namespace WpfBrowser
             get => url;
             set
             {
-                if (url == value) return;  // 같은 URL이면 무시
+                if (url == value) return;
                 
                 url = value ?? "";
                 OnPropertyChanged(nameof(Url));
                 
                 if (string.IsNullOrEmpty(url)) return;
 
-                if (isInitialized && webView.CoreWebView2 != null)
+                if (isInitialized && webView.CoreWebView2 != null && webView.CoreWebView2.Source != url)
                 {
                     webView.CoreWebView2.Navigate(url);
                 }
-                else
+                else if (!isInitialized)
                 {
                     pendingUrl = url;
                 }
@@ -787,6 +912,155 @@ namespace WpfBrowser
         ~BrowserTab()
         {
             Dispose(false);
+        }
+    }
+
+    // 입력 대화상자 클래스 추가
+    public class InputDialog : Window
+    {
+        private TextBox titleTextBox;
+        private TextBox urlTextBox;
+        public string TitleText { get; private set; } = "";
+        public string UrlText { get; private set; } = "";
+
+        public InputDialog(string title, string defaultTitle = "", string defaultUrl = "")
+        {
+            Title = title;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            Width = 500;  // 너비 증가
+            Height = 270;  // 높이 증가
+            ResizeMode = ResizeMode.NoResize;
+            TitleText = defaultTitle;
+            UrlText = defaultUrl;
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // 입력 필드들
+            var stackPanel = new StackPanel { Margin = new Thickness(10) };  // 여백 증가
+            
+            // 제목 입력 영역
+            var titleLabel = new TextBlock 
+            { 
+                Text = "제목:", 
+                Margin = new Thickness(0, 0, 0, 5),
+                FontWeight = FontWeights.Bold  // 글자 굵게
+            };
+            stackPanel.Children.Add(titleLabel);
+            
+            titleTextBox = new TextBox 
+            { 
+                Text = defaultTitle, 
+                Margin = new Thickness(0, 0, 0, 15),  // 아래 여백 증가
+                Padding = new Thickness(5, 3, 5, 3),  // 내부 여백 추가
+                FontSize = 14  // 글자 크기 증가
+            };
+            stackPanel.Children.Add(titleTextBox);
+
+            // URL 입력 영역
+            var urlLabel = new TextBlock 
+            { 
+                Text = "URL:", 
+                Margin = new Thickness(0, 0, 0, 5),
+                FontWeight = FontWeights.Bold  // 글자 굵게
+            };
+            stackPanel.Children.Add(urlLabel);
+            
+            urlTextBox = new TextBox 
+            { 
+                Text = defaultUrl, 
+                Margin = new Thickness(0, 0, 0, 5),
+                Padding = new Thickness(5, 3, 5, 3),  // 내부 여백 추가
+                FontSize = 14  // 글자 크기 증가
+            };
+            stackPanel.Children.Add(urlTextBox);
+
+            grid.Children.Add(stackPanel);
+            Grid.SetRow(stackPanel, 0);
+
+            // 버튼
+            var buttonPanel = new StackPanel 
+            { 
+                Orientation = Orientation.Horizontal, 
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(20, 0, 20, 20)  // 여백 조정
+            };
+            
+            var okButton = new Button 
+            { 
+                Content = "확인", 
+                Width = 80,  // 버튼 크기 증가
+                Height = 30,
+                Margin = new Thickness(0, 0, 10, 0) 
+            };
+            okButton.Click += (s, e) => { DialogResult = true; };
+            
+            var cancelButton = new Button 
+            { 
+                Content = "취소", 
+                Width = 80,  // 버튼 크기 증가
+                Height = 30
+            };
+            cancelButton.Click += (s, e) => { DialogResult = false; };
+            
+            buttonPanel.Children.Add(okButton);
+            buttonPanel.Children.Add(cancelButton);
+            grid.Children.Add(buttonPanel);
+            Grid.SetRow(buttonPanel, 1);
+
+            Content = grid;
+
+            Loaded += (s, e) => titleTextBox.SelectAll();
+            
+            titleTextBox.KeyDown += TextBox_KeyDown;
+            urlTextBox.KeyDown += TextBox_KeyDown;
+        }
+
+        private void TextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                DialogResult = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                DialogResult = false;
+            }
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            titleTextBox.Focus();
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            base.OnClosing(e);
+            TitleText = titleTextBox.Text;
+            UrlText = urlTextBox.Text;
+        }
+    }
+
+    public class InverseBooleanToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            if (value is bool boolValue)
+            {
+                return boolValue ? Visibility.Collapsed : Visibility.Visible;
+            }
+            return Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            if (value is Visibility visibility)
+            {
+                return visibility != Visibility.Visible;
+            }
+            return false;
         }
     }
 } 
